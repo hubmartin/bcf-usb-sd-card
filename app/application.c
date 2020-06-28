@@ -1,7 +1,7 @@
 #include <application.h>
 
 #include "fatfs/ff.h"
-#include "fatfs_spi.h"
+//#include "fatfs_spi.h"
 // Find defailed API description at https://sdk.hardwario.com/
 
 // LED instance
@@ -40,14 +40,12 @@ void application_init(void)
     bc_button_init(&button, BC_GPIO_BUTTON, BC_GPIO_PULL_DOWN, 0);
     bc_button_set_event_handler(&button, button_event_handler, NULL);
 
-    fatfs_spi_init();
-
     uint8_t ret = f_mount(&FatFs, "0:", 1);
 
     bc_log_debug("ret fmount: %d", ret);
 
     FIL fp;
-    ret = f_open(&fp, "text.txt", FA_CREATE_ALWAYS);
+    ret = f_open(&fp, "text.txt", FA_CREATE_ALWAYS | FA_WRITE);
     bc_log_debug("ret f_open: %d", ret);
 
     char text[] = "Ahoj svete!";
@@ -65,7 +63,7 @@ void application_init(void)
 // Application task function (optional) which is called peridically if scheduled
 void application_task(void)
 {
-    static int counter;
+    //static int counter;
 
     // Log task run and increment counter
     //bc_log_debug("APP: Task run (count: %d)", ++counter);
