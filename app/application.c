@@ -27,7 +27,7 @@ bc_button_t button;
 
 FATFS FatFs;
 
-modcontext modctx;
+//modcontext modctx;
 
 // Button event callback
 void button_event_handler(bc_button_t *self, bc_button_event_t event, void *event_param)
@@ -150,7 +150,7 @@ void application_init(void)
     bc_button_set_event_handler(&button, button_event_handler, NULL);
 
     bc_system_pll_enable();
-
+/*
     uint32_t resolution_us = 4;
     uint32_t period_cycles = 255;
 
@@ -200,17 +200,9 @@ void application_init(void)
 
 
     bc_log_debug("ret %d", ret);
+*/
 
 
-    /*
-    		modctx->playrate = 44100;
-		modctx->stereo = 1;
-		modctx->stereo_separation = 1;
-		modctx->bits = 16;
-		modctx->filter = 1;*/
-
-
-/*
     uint8_t ret = f_mount(&FatFs, "0:", 1);
 
     bc_log_debug("ret fmount: %d", ret);
@@ -219,7 +211,7 @@ void application_init(void)
     ret = f_open(&fp, "text.txt", FA_CREATE_ALWAYS | FA_WRITE);
     bc_log_debug("ret f_open: %d", ret);
 
-    char text[] = "Ahoj svete!";
+    char text[] = "Ahoj svete z CoreCard!";
     uint32_t written = 0;
     ret = f_write(&fp, text, strlen(text), &written);
     bc_log_debug("ret f_write: %d", ret);
@@ -228,13 +220,16 @@ void application_init(void)
 
     ret = f_close(&fp);
     bc_log_debug("ret f_close: %d", ret);
-    */
+
+
+//bc_radio_init(BC_RADIO_MODE_NODE_LISTENING);
 
 }
 
 // Application task function (optional) which is called peridically if scheduled
 void application_task(void)
 {
+    /*
     if(load_first_half_flag)
     {
         bc_led_set_mode(&led, BC_LED_MODE_ON);
@@ -255,7 +250,7 @@ void application_task(void)
         load_second_half_flag = false;
     }
 
-    bc_scheduler_plan_current_from_now(0);
+    bc_scheduler_plan_current_from_now(0);*/
 }
 
 

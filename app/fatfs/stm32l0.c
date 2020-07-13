@@ -13,8 +13,6 @@
 
 #include "bcl.h"
 
-#define SPI_CH	1	/* SPI channel to use = 1: SPI1, 11: SPI1/remap, 2: SPI2 */
-
 #define FCLK_SLOW() {  }	/* Set SCLK = PCLK / 64 */
 #define FCLK_FAST() {  }	/* Set SCLK = PCLK / 2 */
 
@@ -63,6 +61,7 @@ static
 BYTE CardType;			/* Card type flags */
 
 void disk_timerproc (void);
+static BYTE xchg_spi (BYTE dat);
 
 /*-----------------------------------------------------------------------*/
 /* SPI controls (Platform dependent)                                     */
@@ -85,12 +84,70 @@ static void init_spi(void)
     bc_gpio_set_output(BC_GPIO_P15, 1); // deselect
     bc_gpio_set_mode(BC_GPIO_P15, BC_GPIO_MODE_OUTPUT);
 
+
+    // SPI on P15-P12
+    /*
     bc_spi_init(BC_SPI_SPEED_250_KHZ, BC_SPI_MODE_0);
     bc_spi_set_manual_cs_control(true);
+    */
+
+    // SPI on radio footprint
+    // PB3 SCLK
+    // PB4 MISO
+    // PB5 MOSI
+    // PA15 CS
+
+    //
+    // GPIO configuration
+    //
+
+    // Enable clock for GPIOH, GPIOB and GPIOA
+    RCC->IOPENR |= RCC_IOPENR_GPIOHEN | RCC_IOPENR_GPIOBEN | RCC_IOPENR_GPIOAEN;
+    // Errata workaround
+    RCC->IOPENR;
+    // Pull-down on GPIO_0 pin
+    GPIOA->PUPDR |= GPIO_PUPDR_PUPD7_1;
+    // Pull-up on MISO, MOSI pins
+    GPIOB->PUPDR |= GPIO_PUPDR_PUPD4_0 | GPIO_PUPDR_PUPD5_0;
+    // Very high speed on CS pin
+    GPIOA->OSPEEDR |= GPIO_OSPEEDER_OSPEED15_1 | GPIO_OSPEEDER_OSPEED15_0;
+    // Very high speed on MOSI and SCLK pins
+    GPIOB->OSPEEDR |= GPIO_OSPEEDER_OSPEED5_1 | GPIO_OSPEEDER_OSPEED5_0 | GPIO_OSPEEDER_OSPEED3_1 | GPIO_OSPEEDER_OSPEED3_0;
+    // General purpose output on CS pin, input on GPIO_0 pin
+    GPIOA->MODER &= ~(GPIO_MODER_MODE15_1 | GPIO_MODER_MODE7_1 | GPIO_MODER_MODE7_0);
+    // General purpose output on SDN pin, alternate function on MOSI, MISO and SCLK pins
+    GPIOB->MODER &= ~(GPIO_MODER_MODE7_1 | GPIO_MODER_MODE5_0 | GPIO_MODER_MODE4_0 | GPIO_MODER_MODE3_0);
+    //GPIOB->MODER &= ~(GPIO_MODER_MODE3_1); // set gpio mode sck
+    // Input on GPIO_1 pin
+    GPIOH->MODER &= ~(GPIO_MODER_MODE0_1 | GPIO_MODER_MODE0_0);
+
+/*
+    GPIOB->BSRR = GPIO_BSRR_BS_3;
+    GPIOB->BSRR = GPIO_BSRR_BR_3;
+    GPIOB->BSRR = GPIO_BSRR_BS_3;
+    GPIOB->BSRR = GPIO_BSRR_BR_3;
+    GPIOB->BSRR = GPIO_BSRR_BS_3;
+    GPIOB->BSRR = GPIO_BSRR_BR_3;
+    GPIOB->BSRR = GPIO_BSRR_BS_3;
+    GPIOB->BSRR = GPIO_BSRR_BR_3;
+    GPIOB->BSRR = GPIO_BSRR_BS_3;
+    GPIOB->BSRR = GPIO_BSRR_BR_3;*/
+
+
+    //
+    // SPI config
+    //
+    // Enable clock for SPI1
+    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+    // Software slave management, baud rate control = fPCLK / 8, master configuration
+    SPI1->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_BR_1 | SPI_CR1_MSTR;
+    // Enable SPI
+    SPI1->CR1 |= SPI_CR1_SPE;
 
     uint8_t src[] = "ABCD";
     uint8_t dst[4];
-    bc_spi_transfer(src, dst, sizeof(src));
+    //bc_spi_transfer(src, dst, sizeof(src));
+    dst[0] = xchg_spi(src[0]);
 
     bc_log_debug("%c", dst[0]);
 
@@ -119,13 +176,29 @@ static void init_spi(void)
 
 
 /* Exchange a byte */
-static
-BYTE xchg_spi (
-	BYTE dat	/* Data to send */
-)
+static BYTE xchg_spi (	BYTE dat)
 {
     BYTE rx;
-    bc_spi_transfer(&dat, &rx, 1);
+    //bc_spi_transfer(&dat, &rx, 1);
+
+        // Wait until transmit buffer is empty
+    while ((SPI1->SR & SPI_SR_TXE) == 0)
+    {
+        continue;
+    }
+
+    // Write data register
+    SPI1->DR = dat;
+
+    // Wait until receive buffer is full
+    while ((SPI1->SR & SPI_SR_RXNE) == 0)
+    {
+        continue;
+    }
+
+    // Read data register
+    rx = SPI1->DR;
+
 	return rx;		/* Return received byte */
 }
 
@@ -137,7 +210,12 @@ void rcvr_spi_multi (
 	UINT btr		/* Number of bytes to receive (even number) */
 )
 {
-	bc_spi_transfer(NULL, buff, btr);
+	//bc_spi_transfer(NULL, buff, btr);
+    while(btr--)
+    {
+        *buff = xchg_spi(0);
+        buff++;
+    }
 }
 
 
@@ -149,7 +227,12 @@ void xmit_spi_multi (
 	UINT btx			/* Number of bytes to send (even number) */
 )
 {
-	bc_spi_transfer(buff, NULL, btx);
+	//bc_spi_transfer(buff, NULL, btx);
+    while(btx--)
+    {
+        xchg_spi(*buff);
+        buff++;
+    }
 }
 #endif
 
@@ -184,7 +267,11 @@ int wait_ready (	/* 1:Ready, 0:Timeout */
 static
 void deselect (void)
 {
-	bc_gpio_set_output(BC_GPIO_P15, 1);		/* Set CS# high */
+	//bc_gpio_set_output(BC_GPIO_P15, 1);		/* Set CS# high */
+
+    // Set CS pin to log. 1
+    GPIOA->BSRR = GPIO_BSRR_BS_15;
+
 	xchg_spi(0xFF);	/* Dummy clock (force DO hi-z for multiple slave SPI) */
 
 }
@@ -198,7 +285,11 @@ void deselect (void)
 static
 int select (void)	/* 1:OK, 0:Timeout */
 {
-	bc_gpio_set_output(BC_GPIO_P15, 0);		/* Set CS# low */
+	//bc_gpio_set_output(BC_GPIO_P15, 0);		/* Set CS# low */
+
+    // Set CS pin to log. 0
+    GPIOA->BSRR = GPIO_BSRR_BR_15;
+
 	xchg_spi(0xFF);	/* Dummy clock (force DO enabled) */
 	if (wait_ready(500)) return 1;	/* Wait for card ready */
 
