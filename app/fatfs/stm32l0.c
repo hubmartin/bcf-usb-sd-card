@@ -16,7 +16,8 @@
 #define FCLK_SLOW() {  }	/* Set SCLK = PCLK / 64 */
 #define FCLK_FAST() {  }	/* Set SCLK = PCLK / 2 */
 
-
+//#define USE_PINHEADER_SPI
+#define USE_RADIO_SPI
 
 /*--------------------------------------------------------------------------
 
@@ -67,10 +68,10 @@ static BYTE xchg_spi (BYTE dat);
 /* SPI controls (Platform dependent)                                     */
 /*-----------------------------------------------------------------------*/
 
-void TIM3_handler(void *param)
+static void TIM6_handler(void *param)
 {
     (void) param;
-    TIM3->SR = ~TIM_DIER_UIE;
+    TIM6->SR = ~TIM_DIER_UIE;
 
     disk_timerproc();
 }
@@ -84,13 +85,13 @@ static void init_spi(void)
     bc_gpio_set_output(BC_GPIO_P15, 1); // deselect
     bc_gpio_set_mode(BC_GPIO_P15, BC_GPIO_MODE_OUTPUT);
 
-
+    #ifdef USE_PINHEADER_SPI
     // SPI on P15-P12
-    /*
     bc_spi_init(BC_SPI_SPEED_250_KHZ, BC_SPI_MODE_0);
     bc_spi_set_manual_cs_control(true);
-    */
+    #endif
 
+    #ifdef USE_RADIO_SPI
     // SPI on radio footprint
     // PB3 SCLK
     // PB4 MISO
@@ -100,7 +101,6 @@ static void init_spi(void)
     //
     // GPIO configuration
     //
-
     // Enable clock for GPIOH, GPIOB and GPIOA
     RCC->IOPENR |= RCC_IOPENR_GPIOHEN | RCC_IOPENR_GPIOBEN | RCC_IOPENR_GPIOAEN;
     // Errata workaround
@@ -117,22 +117,8 @@ static void init_spi(void)
     GPIOA->MODER &= ~(GPIO_MODER_MODE15_1 | GPIO_MODER_MODE7_1 | GPIO_MODER_MODE7_0);
     // General purpose output on SDN pin, alternate function on MOSI, MISO and SCLK pins
     GPIOB->MODER &= ~(GPIO_MODER_MODE7_1 | GPIO_MODER_MODE5_0 | GPIO_MODER_MODE4_0 | GPIO_MODER_MODE3_0);
-    //GPIOB->MODER &= ~(GPIO_MODER_MODE3_1); // set gpio mode sck
     // Input on GPIO_1 pin
     GPIOH->MODER &= ~(GPIO_MODER_MODE0_1 | GPIO_MODER_MODE0_0);
-
-/*
-    GPIOB->BSRR = GPIO_BSRR_BS_3;
-    GPIOB->BSRR = GPIO_BSRR_BR_3;
-    GPIOB->BSRR = GPIO_BSRR_BS_3;
-    GPIOB->BSRR = GPIO_BSRR_BR_3;
-    GPIOB->BSRR = GPIO_BSRR_BS_3;
-    GPIOB->BSRR = GPIO_BSRR_BR_3;
-    GPIOB->BSRR = GPIO_BSRR_BS_3;
-    GPIOB->BSRR = GPIO_BSRR_BR_3;
-    GPIOB->BSRR = GPIO_BSRR_BS_3;
-    GPIOB->BSRR = GPIO_BSRR_BR_3;*/
-
 
     //
     // SPI config
@@ -143,34 +129,25 @@ static void init_spi(void)
     SPI1->CR1 = SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_BR_1 | SPI_CR1_MSTR;
     // Enable SPI
     SPI1->CR1 |= SPI_CR1_SPE;
+    #endif
 
-    uint8_t src[] = "ABCD";
-    uint8_t dst[4];
-    //bc_spi_transfer(src, dst, sizeof(src));
-    dst[0] = xchg_spi(src[0]);
-
-    bc_log_debug("%c", dst[0]);
-
+    //
+    // Timer for fatfs timeouts
+    //
     // Enable TIM3 clock
-    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
-
+    RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
     // Errata workaround
     RCC->APB1ENR;
-
     // Disable counter if it is running
-    TIM3->CR1 &= ~TIM_CR1_CEN;
-
+    TIM6->CR1 &= ~TIM_CR1_CEN;
     // Set prescaler to 5 * 32 (5 microseconds resolution)
-    TIM3->PSC = 1 * 32 - 1;
-    TIM3->ARR = 1e6 / (1000) - 1;  // 1kHz ?
-
-    TIM3->DIER |= TIM_DIER_UIE;
+    TIM6->PSC = 1 * 32 - 1;
+    TIM6->ARR = 1e6 / (1000) - 1;  // 1kHz ?
+    TIM6->DIER |= TIM_DIER_UIE;
     // Enable TIM3 interrupts
-    NVIC_EnableIRQ(TIM3_IRQn);
-
-    bc_timer_set_irq_handler(TIM3, TIM3_handler, NULL);
-
-    TIM3->CR1 |= TIM_CR1_CEN;
+    NVIC_EnableIRQ(TIM6_IRQn);
+    bc_timer_set_irq_handler(TIM6, TIM6_handler, NULL);
+    TIM6->CR1 |= TIM_CR1_CEN;
 }
 
 
@@ -179,9 +156,12 @@ static void init_spi(void)
 static BYTE xchg_spi (	BYTE dat)
 {
     BYTE rx;
-    //bc_spi_transfer(&dat, &rx, 1);
+    #ifdef USE_PINHEADER_SPI
+    bc_spi_transfer(&dat, &rx, 1);
+    #endif
 
-        // Wait until transmit buffer is empty
+    #ifdef USE_RADIO_SPI
+    // Wait until transmit buffer is empty
     while ((SPI1->SR & SPI_SR_TXE) == 0)
     {
         continue;
@@ -198,6 +178,7 @@ static BYTE xchg_spi (	BYTE dat)
 
     // Read data register
     rx = SPI1->DR;
+    #endif
 
 	return rx;		/* Return received byte */
 }
@@ -248,7 +229,6 @@ int wait_ready (	/* 1:Ready, 0:Timeout */
 {
 	BYTE d;
 
-
 	Timer2 = wt;
 	do {
 		d = xchg_spi(0xFF);
@@ -267,10 +247,14 @@ int wait_ready (	/* 1:Ready, 0:Timeout */
 static
 void deselect (void)
 {
-	//bc_gpio_set_output(BC_GPIO_P15, 1);		/* Set CS# high */
+    #ifdef USE_PINHEADER_SPI
+	bc_gpio_set_output(BC_GPIO_P15, 1);		/* Set CS# high */
+    #endif
 
+    #ifdef USE_RADIO_SPI
     // Set CS pin to log. 1
     GPIOA->BSRR = GPIO_BSRR_BS_15;
+    #endif
 
 	xchg_spi(0xFF);	/* Dummy clock (force DO hi-z for multiple slave SPI) */
 
@@ -285,10 +269,14 @@ void deselect (void)
 static
 int select (void)	/* 1:OK, 0:Timeout */
 {
-	//bc_gpio_set_output(BC_GPIO_P15, 0);		/* Set CS# low */
+    #ifdef USE_PINHEADER_SPI
+    bc_gpio_set_output(BC_GPIO_P15, 0);		/* Set CS# low */
+    #endif
 
+    #ifdef USE_RADIO_SPI
     // Set CS pin to log. 0
     GPIOA->BSRR = GPIO_BSRR_BR_15;
+    #endif
 
 	xchg_spi(0xFF);	/* Dummy clock (force DO enabled) */
 	if (wait_ready(500)) return 1;	/* Wait for card ready */
@@ -665,11 +653,9 @@ void disk_timerproc (void)
 {
 	WORD n;
 
-
 	n = Timer1;						/* 1kHz decrement timer stopped at 0 */
 	if (n) Timer1 = --n;
 	n = Timer2;
 	if (n) Timer2 = --n;
-
 }
 

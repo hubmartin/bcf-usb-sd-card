@@ -221,9 +221,6 @@ void application_init(void)
     ret = f_close(&fp);
     bc_log_debug("ret f_close: %d", ret);
 
-
-//bc_radio_init(BC_RADIO_MODE_NODE_LISTENING);
-
 }
 
 // Application task function (optional) which is called peridically if scheduled
