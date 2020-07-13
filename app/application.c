@@ -27,7 +27,7 @@ bc_button_t button;
 
 FATFS FatFs;
 
-//modcontext modctx;
+modcontext modctx;
 
 // Button event callback
 void button_event_handler(bc_button_t *self, bc_button_event_t event, void *event_param)
@@ -131,26 +131,38 @@ void irq_TIM3_handler(void *param)
 }
 
 
-// Application initialization function which is called once after boot
-void application_init(void)
+void audio_task(void *param)
 {
-    // Initialize logging
-    bc_log_init(BC_LOG_LEVEL_DUMP, BC_LOG_TIMESTAMP_ABS);
+    if (load_first_half_flag || load_second_half_flag)
+    {
+        bc_log_debug(".");
+    }
 
-    // Initialize LED
-    bc_led_init(&led, BC_GPIO_LED, false, 0);
-    bc_led_pulse(&led, 1000);
+    if(load_first_half_flag)
+    {
+        bc_led_set_mode(&led, BC_LED_MODE_ON);
+        bc_gpio_set_output(BC_GPIO_P9, true);
+        hxcmod_fillbuffer( &modctx, (msample*)&dmasoundbuffer, SAMPLE_BUFFER_SIZE/2, NULL );
+        bc_led_set_mode(&led, BC_LED_MODE_OFF);
+        bc_gpio_set_output(BC_GPIO_P9, false);
+        load_first_half_flag = false;
+    }
 
-    bc_gpio_init(BC_GPIO_P9);
-    bc_gpio_set_mode(BC_GPIO_P9, BC_GPIO_MODE_OUTPUT);
-    bc_gpio_set_output(BC_GPIO_P9, false);
+    if(load_second_half_flag)
+    {
+        bc_led_set_mode(&led, BC_LED_MODE_ON);
+        bc_gpio_set_output(BC_GPIO_P9, true);
+        hxcmod_fillbuffer( &modctx, (msample*)&dmasoundbuffer[SAMPLE_BUFFER_SIZE/2], SAMPLE_BUFFER_SIZE/2, NULL );
+        bc_led_set_mode(&led, BC_LED_MODE_OFF);
+        bc_gpio_set_output(BC_GPIO_P9, false);
+        load_second_half_flag = false;
+    }
 
-    // Initialize button
-    bc_button_init(&button, BC_GPIO_BUTTON, BC_GPIO_PULL_DOWN, 0);
-    bc_button_set_event_handler(&button, button_event_handler, NULL);
+    bc_scheduler_plan_current_from_now(0);
+}
 
-    bc_system_pll_enable();
-/*
+void audio_example()
+{
     uint32_t resolution_us = 4;
     uint32_t period_cycles = 255;
 
@@ -198,11 +210,13 @@ void application_init(void)
 
     ret = hxcmod_load( &modctx, (void*)&mod_data, sizeof(mod_data) );
 
+    bc_scheduler_register(audio_task, NULL, 0);
 
     bc_log_debug("ret %d", ret);
-*/
+}
 
-
+void fat_example()
+{
     uint8_t ret = f_mount(&FatFs, "0:", 1);
 
     bc_log_debug("ret fmount: %d", ret);
@@ -213,41 +227,43 @@ void application_init(void)
 
     char text[] = "Ahoj svete z CoreCard!";
     uint32_t written = 0;
-    ret = f_write(&fp, text, strlen(text), &written);
+    ret = f_write(&fp, text, strlen(text), (UINT*)&written);
     bc_log_debug("ret f_write: %d", ret);
 
     bc_log_debug("written: %d", written);
 
     ret = f_close(&fp);
     bc_log_debug("ret f_close: %d", ret);
+}
 
+// Application initialization function which is called once after boot
+void application_init(void)
+{
+    // Initialize logging
+    bc_log_init(BC_LOG_LEVEL_DUMP, BC_LOG_TIMESTAMP_ABS);
+
+    // Initialize LED
+    bc_led_init(&led, BC_GPIO_LED, false, 0);
+    bc_led_pulse(&led, 1000);
+
+    bc_gpio_init(BC_GPIO_P9);
+    bc_gpio_set_mode(BC_GPIO_P9, BC_GPIO_MODE_OUTPUT);
+    bc_gpio_set_output(BC_GPIO_P9, false);
+
+    // Initialize button
+    bc_button_init(&button, BC_GPIO_BUTTON, BC_GPIO_PULL_DOWN, 0);
+    bc_button_set_event_handler(&button, button_event_handler, NULL);
+
+    bc_system_pll_enable();
+
+    audio_example();
 }
 
 // Application task function (optional) which is called peridically if scheduled
 void application_task(void)
 {
     /*
-    if(load_first_half_flag)
-    {
-        bc_led_set_mode(&led, BC_LED_MODE_ON);
-        bc_gpio_set_output(BC_GPIO_P9, true);
-        hxcmod_fillbuffer( &modctx, (msample*)&dmasoundbuffer, SAMPLE_BUFFER_SIZE/2, NULL );
-        bc_led_set_mode(&led, BC_LED_MODE_OFF);
-        bc_gpio_set_output(BC_GPIO_P9, false);
-        load_first_half_flag = false;
-    }
-
-    if(load_second_half_flag)
-    {
-        bc_led_set_mode(&led, BC_LED_MODE_ON);
-        bc_gpio_set_output(BC_GPIO_P9, true);
-        hxcmod_fillbuffer( &modctx, (msample*)&dmasoundbuffer[SAMPLE_BUFFER_SIZE/2], SAMPLE_BUFFER_SIZE/2, NULL );
-        bc_led_set_mode(&led, BC_LED_MODE_OFF);
-        bc_gpio_set_output(BC_GPIO_P9, false);
-        load_second_half_flag = false;
-    }
-
-    bc_scheduler_plan_current_from_now(0);*/
+    */
 }
 
 
