@@ -114,7 +114,7 @@ static void init_spi(void)
     // Very high speed on MOSI and SCLK pins
     GPIOB->OSPEEDR |= GPIO_OSPEEDER_OSPEED5_1 | GPIO_OSPEEDER_OSPEED5_0 | GPIO_OSPEEDER_OSPEED3_1 | GPIO_OSPEEDER_OSPEED3_0;
     // General purpose output on CS pin, input on GPIO_0 pin
-    GPIOA->MODER &= ~(GPIO_MODER_MODE15_1 | GPIO_MODER_MODE7_1 | GPIO_MODER_MODE7_0);
+    GPIOA->MODER &= ~(GPIO_MODER_MODE15_1);
     // General purpose output on SDN pin, alternate function on MOSI, MISO and SCLK pins
     GPIOB->MODER &= ~(GPIO_MODER_MODE7_1 | GPIO_MODER_MODE5_0 | GPIO_MODER_MODE4_0 | GPIO_MODER_MODE3_0);
     // Input on GPIO_1 pin

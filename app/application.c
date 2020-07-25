@@ -166,7 +166,7 @@ void audio_example()
     uint32_t resolution_us = 4;
     uint32_t period_cycles = 255;
 
-    // PA7 PWM TIM3_CH2
+    // PA7 PWM TIM3_CH2, GPIO0 on SPIRIT1 header
     // Enable TIM3 clock
     RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
 
@@ -180,7 +180,7 @@ void audio_example()
     TIM3->PSC = resolution_us * 1 - 1;
     TIM3->ARR = period_cycles - 1;
 
-    // CH2 - is on PB5 - RADIO_MOSI
+    // Timer3 CH2
     TIM3->CCMR1 |= TIM_CCMR1_OC2M_1 | TIM_CCMR1_OC2M_2;
     TIM3->CCER |= TIM_CCER_CC2E;
 
@@ -257,6 +257,8 @@ void application_init(void)
     bc_system_pll_enable();
 
     audio_example();
+
+    fat_example();
 }
 
 // Application task function (optional) which is called peridically if scheduled
