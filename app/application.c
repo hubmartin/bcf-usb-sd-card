@@ -1,13 +1,13 @@
 #include <application.h>
 
 #include "fatfs/ff.h"
-//#include "fatfs_spi.h"
-
 #include "hxcmod.h"
-//#include "data_cartoon_dreams_n_fantasies_mod.h"
 
-// MOD data
-extern const unsigned char mod_data[39424];
+
+//#define MOD_PLAYER
+#define FAT_PLAYER
+
+FIL fp;
 
 // sound output buffer
 #define SAMPLE_BUFFER_SIZE (1024*6)
@@ -27,7 +27,12 @@ bc_button_t button;
 
 FATFS FatFs;
 
+#ifdef MOD_PLAYER
 modcontext modctx;
+
+// MOD data
+extern const unsigned char mod_data[39424];
+#endif
 
 // Button event callback
 void button_event_handler(bc_button_t *self, bc_button_event_t event, void *event_param)
@@ -42,42 +47,6 @@ void button_event_handler(bc_button_t *self, bc_button_event_t event, void *even
     }
 }
 
-const uint8_t sine_wave[] = {
-  0x80, 0x86, 0x8C, 0x93,
-  0x99, 0x9F, 0xA5, 0xAB,
-  0xB1, 0xB6, 0xBC, 0xC1,
-  0xC7, 0xCC, 0xD1, 0xD5,
-  0xDA, 0xDE, 0xE2, 0xE6,
-  0xEA, 0xED, 0xF0, 0xF3,
-  0xF5, 0xF8, 0xFA, 0xFB,
-  0xFD, 0xFE, 0xFE, 0xFF,
-  0xFF, 0xFF, 0xFE, 0xFE,
-  0xFD, 0xFB, 0xFA, 0xF8,
-  0xF5, 0xF3, 0xF0, 0xED,
-  0xEA, 0xE6, 0xE2, 0xDE,
-  0xDA, 0xD5, 0xD1, 0xCC,
-  0xC7, 0xC1, 0xBC, 0xB6,
-  0xB1, 0xAB, 0xA5, 0x9F,
-  0x99, 0x93, 0x8C, 0x86,
-  0x80, 0x7A, 0x74, 0x6D,
-  0x67, 0x61, 0x5B, 0x55,
-  0x4F, 0x4A, 0x44, 0x3F,
-  0x39, 0x34, 0x2F, 0x2B,
-  0x26, 0x22, 0x1E, 0x1A,
-  0x16, 0x13, 0x10, 0x0D,
-  0x0B, 0x08, 0x06, 0x05,
-  0x03, 0x02, 0x02, 0x01,
-  0x01, 0x01, 0x02, 0x02,
-  0x03, 0x05, 0x06, 0x08,
-  0x0B, 0x0D, 0x10, 0x13,
-  0x16, 0x1A, 0x1E, 0x22,
-  0x26, 0x2B, 0x2F, 0x34,
-  0x39, 0x3F, 0x44, 0x4A,
-  0x4F, 0x55, 0x5B, 0x61,
-  0x67, 0x6D, 0x74, 0x7A
-};
-
-
 
 void irq_TIM3_handler(void *param)
 {
@@ -88,29 +57,6 @@ void irq_TIM3_handler(void *param)
     {
         return;
     }
-/*
-    static uint8_t interrupt_counter = 0;
-
-    interrupt_counter++;
-
-    if (interrupt_counter != 5)
-    {
-        //return;
-    }
-
-    interrupt_counter = 0;
-
-    static uint16_t sine_items = sizeof(sine_wave);
-    static uint16_t sample = 0;
-
-    TIM3->CCR2 = sine_wave[sample];
-
-    sample += 10;
-
-    if (sample >= sine_items)
-    {
-        sample = 0;
-    }*/
 
     uint8_t sample = dmasoundbuffer[buffer_playhead];
     TIM3->CCR2 = sample;
@@ -130,19 +76,54 @@ void irq_TIM3_handler(void *param)
     }
 }
 
+uint8_t f_read_multiple(FIL* fp, uint8_t* buff, UINT btr,UINT* br)
+{
+    uint8_t ret = 0;
+    uint32_t bytes_read;
+    uint32_t bytes_read_total = 0;
+
+    while(btr)
+    {
+        uint32_t len = (btr > 512) ? 512 : btr;
+        ret = f_read(fp, (void*)buff, len, (UINT*)&bytes_read);
+        if (ret != FR_OK)
+        {
+            return ret;
+        }
+        btr -= len;
+        bytes_read_total += bytes_read;
+        buff += len;
+    }
+
+    *br = bytes_read_total;
+    return ret;
+}
 
 void audio_task(void *param)
 {
+    uint32_t bytes_read;
+    uint8_t ret;
+
     if (load_first_half_flag || load_second_half_flag)
     {
-        bc_log_debug(".");
+        //bc_log_debug(".");
     }
+
 
     if(load_first_half_flag)
     {
         bc_led_set_mode(&led, BC_LED_MODE_ON);
         bc_gpio_set_output(BC_GPIO_P9, true);
+
+        #ifdef MOD_PLAYER
         hxcmod_fillbuffer( &modctx, (msample*)&dmasoundbuffer, SAMPLE_BUFFER_SIZE/2, NULL );
+        #endif
+
+        #ifdef FAT_PLAYER
+        ret = f_read_multiple(&fp, (msample*)&dmasoundbuffer, SAMPLE_BUFFER_SIZE/2, (UINT*)&bytes_read);
+        bc_log_debug("ret f_read: %d", ret);
+        #endif
+
         bc_led_set_mode(&led, BC_LED_MODE_OFF);
         bc_gpio_set_output(BC_GPIO_P9, false);
         load_first_half_flag = false;
@@ -152,16 +133,27 @@ void audio_task(void *param)
     {
         bc_led_set_mode(&led, BC_LED_MODE_ON);
         bc_gpio_set_output(BC_GPIO_P9, true);
+
+        #ifdef MOD_PLAYER
         hxcmod_fillbuffer( &modctx, (msample*)&dmasoundbuffer[SAMPLE_BUFFER_SIZE/2], SAMPLE_BUFFER_SIZE/2, NULL );
+        #endif
+
+        #ifdef FAT_PLAYER
+        ret = f_read_multiple(&fp, (msample*)&dmasoundbuffer[SAMPLE_BUFFER_SIZE/2], SAMPLE_BUFFER_SIZE/2, (UINT*)&bytes_read);
+        bc_log_debug("ret f_read: %d", ret);
+        #endif
+
         bc_led_set_mode(&led, BC_LED_MODE_OFF);
         bc_gpio_set_output(BC_GPIO_P9, false);
         load_second_half_flag = false;
     }
 
+
+
     bc_scheduler_plan_current_from_now(0);
 }
 
-void audio_example()
+void audio_pwm_init()
 {
     uint32_t resolution_us = 4;
     uint32_t period_cycles = 255;
@@ -177,7 +169,7 @@ void audio_example()
     TIM3->CR1 &= ~TIM_CR1_CEN;
 
     // Set prescaler to 5 * 32 (5 microseconds resolution)
-    TIM3->PSC = resolution_us * 1 - 1;
+    TIM3->PSC = resolution_us * 2 - 1;
     TIM3->ARR = period_cycles - 1;
 
     // Timer3 CH2
@@ -200,19 +192,43 @@ void audio_example()
     bc_timer_set_irq_handler(TIM3, irq_TIM3_handler, NULL);
 
     TIM3->CR1 |= TIM_CR1_CEN;
+}
 
-    int ret = 0;
+void audio_example()
+{
+
+    audio_pwm_init();
+
+    uint8_t ret = 0;
 
     #define PLAYER_SAMPLE_RATE 16000 //32000
 
+    #ifdef MOD_PLAYER
     ret = hxcmod_init(&modctx);
     hxcmod_setcfg( &modctx, PLAYER_SAMPLE_RATE, 0, 0);
-
     ret = hxcmod_load( &modctx, (void*)&mod_data, sizeof(mod_data) );
+    bc_log_debug("ret %d", ret);
+    #endif
+
+    #ifdef FAT_PLAYER
+    ret = f_mount(&FatFs, "0:", 1);
+    bc_log_debug("ret fmount: %d", ret);
+
+    ret = f_open(&fp, "hwdev.raw", FA_READ);
+    bc_log_debug("ret f_open: %d", ret);
+
+/*
+    uint32_t bytes_read = 0;
+    //SAMPLE_BUFFER_SIZE/2 = 3072
+    for (int i = 0; i < 6; i++)
+    {
+        ret = f_read_multiple(&fp, (msample*)&dmasoundbuffer, SAMPLE_BUFFER_SIZE/2, (UINT*)&bytes_read);
+        bc_log_debug("ret f_read: %d, bytes_read %d", ret, bytes_read);
+    }*/
+
+    #endif
 
     bc_scheduler_register(audio_task, NULL, 0);
-
-    bc_log_debug("ret %d", ret);
 }
 
 void fat_example()
@@ -221,7 +237,9 @@ void fat_example()
 
     bc_log_debug("ret fmount: %d", ret);
 
+    /*
     FIL fp;
+
     ret = f_open(&fp, "text.txt", FA_CREATE_ALWAYS | FA_WRITE);
     bc_log_debug("ret f_open: %d", ret);
 
@@ -233,7 +251,21 @@ void fat_example()
     bc_log_debug("written: %d", written);
 
     ret = f_close(&fp);
+    bc_log_debug("ret f_close: %d", ret);*/
+/*
+    FIL fp;
+    ret = f_open(&fp, "hwdev.raw", FA_READ);
+    bc_log_debug("ret f_open: %d", ret);
+
+    static char rx_buffer[600];
+    uint32_t bytes_read = 0;
+    ret = f_read(&fp, (msample*)&dmasoundbuffer, SAMPLE_BUFFER_SIZE/2, (UINT*)&bytes_read);
+    bc_log_debug("ret f_read: %d", ret);
+
+    ret = f_close(&fp);
     bc_log_debug("ret f_close: %d", ret);
+
+    (void) rx_buffer[0];*/
 }
 
 // Application initialization function which is called once after boot
@@ -258,7 +290,7 @@ void application_init(void)
 
     audio_example();
 
-    fat_example();
+    //fat_example();
 }
 
 // Application task function (optional) which is called peridically if scheduled
